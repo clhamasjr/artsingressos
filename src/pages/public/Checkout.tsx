@@ -45,6 +45,26 @@ export default function Checkout() {
     },
   });
 
+  // Quando validação falha, faz scroll pro primeiro erro e mostra banner
+  const onInvalid = (errs: typeof errors) => {
+    const order: (keyof CheckoutForm)[] = [
+      'buyer_name',
+      'buyer_email',
+      'buyer_phone',
+      'buyer_cpf',
+      'accept_terms',
+    ];
+    const firstErrorKey = order.find((k) => errs[k]);
+    if (firstErrorKey) {
+      const el = document.querySelector(
+        `[name="${firstErrorKey}"]`
+      ) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.focus?.();
+    }
+    setError('Confira os campos destacados em vermelho.');
+  };
+
   // Se não veio estado de checkout, redireciona pra home
   useEffect(() => {
     if (!state || !state.items || state.items.length === 0) {
@@ -136,7 +156,7 @@ export default function Checkout() {
       <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Finalizar compra</h1>
       <p className="mt-1 text-slate-600">{state.eventName}</p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna principal */}
         <div className="lg:col-span-2 space-y-5">
           <div className="card">
@@ -205,12 +225,12 @@ export default function Checkout() {
             </div>
           </div>
 
-          <div className="card">
+          <div className={`card ${errors.accept_terms ? 'ring-2 ring-red-400 bg-red-50' : ''}`}>
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 {...register('accept_terms')}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="mt-1 h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
               />
               <span className="text-sm text-slate-700">
                 Li e aceito os{' '}
@@ -225,7 +245,7 @@ export default function Checkout() {
               </span>
             </label>
             {errors.accept_terms && (
-              <p className="mt-2 text-xs text-red-600">{errors.accept_terms.message}</p>
+              <p className="mt-2 text-xs text-red-700 font-medium">⚠ {errors.accept_terms.message}</p>
             )}
           </div>
         </div>
