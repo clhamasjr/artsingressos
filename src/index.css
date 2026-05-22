@@ -31,3 +31,59 @@
     @apply block w-full rounded-lg border-0 bg-white px-3 py-2 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-brand-600;
   }
 }
+
+/* ============================================================
+   IMPRESSAO DO VOUCHER
+   Esconde header/footer/botoes, deixa so o voucher centralizado
+   ============================================================ */
+@media print {
+  /* Esconde tudo por padrao */
+  body * {
+    visibility: hidden;
+  }
+  /* Mostra so o area do voucher e seus filhos */
+  .voucher-print-area,
+  .voucher-print-area * {
+    visibility: visible;
+  }
+  /* Esconde botoes e elementos que nao devem imprimir */
+  .no-print {
+    display: none !important;
+  }
+  /* Reseta o layout pra ocupar a pagina toda */
+  html, body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+  }
+  .voucher-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 16px;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  /* Garante que cores do brand sejam impressas (Chrome respeita isso) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Esconde scrollbar e elementos sticky */
+  header, footer, nav, [class*="sticky"] {
+    display: none !important;
+  }
+  /* Evita quebra de pagina dentro do voucher */
+  .voucher-print-area {
+    page-break-inside: avoid;
+  }
+  @page {
+    margin: 10mm;
+    size: A4;
+  }
+}
+

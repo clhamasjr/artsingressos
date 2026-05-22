@@ -88,7 +88,7 @@ export default function Voucher() {
 
   return (
     <div className="mx-auto max-w-md px-4 sm:px-6 py-8">
-      <div className="rounded-2xl bg-white shadow-md ring-1 ring-slate-200 overflow-hidden">
+      <div className="voucher-print-area rounded-2xl bg-white shadow-md ring-1 ring-slate-200 overflow-hidden">
         {/* Topo brand */}
         <div className="bg-brand-600 text-white text-center p-5">
           <p className="text-xs uppercase tracking-wider opacity-80">Arts Ingressos</p>
@@ -152,12 +152,12 @@ export default function Voucher() {
       <button
         type="button"
         onClick={() => window.print()}
-        className="mt-4 w-full btn-secondary"
+        className="no-print mt-4 w-full btn-secondary"
       >
         <Download className="h-4 w-4" /> Salvar / Imprimir
       </button>
 
-      <p className="mt-3 text-xs text-slate-500 text-center px-4">
+      <p className="no-print mt-3 text-xs text-slate-500 text-center px-4">
         Apresente o QR Code na entrada. O voucher é pessoal e intransferível.
       </p>
     </div>
