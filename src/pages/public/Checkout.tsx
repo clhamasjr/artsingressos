@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, forwardRef } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -47,14 +47,29 @@ export default function Checkout() {
 
   // Quando validação falha, faz scroll pro primeiro erro e mostra banner
   const onInvalid = (errs: typeof errors) => {
+    console.warn('[Checkout] Validacao falhou:', errs);
     const order: (keyof CheckoutForm)[] = [
       'buyer_name',
       'buyer_email',
       'buyer_phone',
       'buyer_cpf',
+      'payment_method',
       'accept_terms',
     ];
     const firstErrorKey = order.find((k) => errs[k]);
+    const missingFields = order
+      .filter((k) => errs[k])
+      .map((k) => {
+        switch (k) {
+          case 'buyer_name': return 'Nome';
+          case 'buyer_email': return 'E-mail';
+          case 'buyer_phone': return 'WhatsApp';
+          case 'buyer_cpf': return 'CPF';
+          case 'payment_method': return 'Forma de pagamento';
+          case 'accept_terms': return 'Aceite dos Termos';
+        }
+      })
+      .join(', ');
     if (firstErrorKey) {
       const el = document.querySelector(
         `[name="${firstErrorKey}"]`
@@ -62,7 +77,7 @@ export default function Checkout() {
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el?.focus?.();
     }
-    setError('Confira os campos destacados em vermelho.');
+    setError(`Confira: ${missingFields}`);
   };
 
   // Se não veio estado de checkout, redireciona pra home
@@ -326,17 +341,21 @@ interface PaymentOptionProps extends React.InputHTMLAttributes<HTMLInputElement>
   icon: React.ReactNode;
 }
 
-const PaymentOption = ({ label, description, icon, ...inputProps }: PaymentOptionProps) => {
-  return (
-    <label className="flex items-start gap-3 rounded-lg border-2 border-slate-200 p-3 cursor-pointer hover:border-brand-300 has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 transition-colors">
-      <input {...inputProps} type="radio" className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-700">{icon}</span>
-          <span className="font-medium text-slate-900">{label}</span>
+// forwardRef é essencial pra react-hook-form conseguir registrar o input
+const PaymentOption = forwardRef<HTMLInputElement, PaymentOptionProps>(
+  ({ label, description, icon, ...inputProps }, ref) => {
+    return (
+      <label className="flex items-start gap-3 rounded-lg border-2 border-slate-200 p-3 cursor-pointer hover:border-brand-300 has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 transition-colors">
+        <input ref={ref} {...inputProps} type="radio" className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-700">{icon}</span>
+            <span className="font-medium text-slate-900">{label}</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{description}</p>
         </div>
-        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
-      </div>
-    </label>
-  );
-};
+      </label>
+    );
+  }
+);
+PaymentOption.displayName = 'PaymentOption';
