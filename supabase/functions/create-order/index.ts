@@ -128,25 +128,30 @@ Deno.serve(async (req: Request) => {
         };
       });
 
-      // payment_methods.default_payment_method_id pra forçar Pix se escolhido
+      // Restringe payment_types conforme escolha do usuario.
+      // NAO usar default_payment_method_id pra evitar conflito "excluded".
       const paymentMethodsCfg: Record<string, unknown> = {
         installments: 12,
       };
       if (body.payment_method === "pix") {
-        paymentMethodsCfg.default_payment_method_id = "pix";
+        // Pix = payment_type "bank_transfer". Excluo todo o resto.
         paymentMethodsCfg.excluded_payment_types = [
           { id: "credit_card" },
           { id: "debit_card" },
+          { id: "prepaid_card" },
           { id: "ticket" },
           { id: "atm" },
+          { id: "digital_wallet" },
         ];
       } else {
-        // cartao: bloqueia pix/boleto
+        // Cartao: exclui bank_transfer (Pix), boleto, atm, prepago, wallet
         paymentMethodsCfg.excluded_payment_types = [
+          { id: "bank_transfer" },
           { id: "ticket" },
           { id: "atm" },
+          { id: "prepaid_card" },
+          { id: "digital_wallet" },
         ];
-        paymentMethodsCfg.excluded_payment_methods = [{ id: "pix" }];
       }
 
       const preferencePayload = {
@@ -185,9 +190,9 @@ Deno.serve(async (req: Request) => {
       if (!mpRes.ok) {
         const errBody = await mpRes.text();
         console.error("MP preference creation failed:", mpRes.status, errBody);
-        // Rollback: marca order como falhou
         await supabase.from("orders").update({ status: "falhou" }).eq("id", order_id);
-        return jsonError(`Falha ao criar pagamento no Mercado Pago: ${mpRes.status}`, 502);
+        // Debug: retorna detalhe do MP pra investigar (tirar em prod)
+        return jsonError(`MP ${mpRes.status}: ${errBody.slice(0, 600)}`, 502);
       }
 
       const pref = (await mpRes.json()) as {
