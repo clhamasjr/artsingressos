@@ -26,6 +26,18 @@ async function hmacSha256Hex(key: string, message: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function fireSendVoucher(order_id: string) {
+  const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/send-voucher`;
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const p = fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ order_id }),
+  }).catch((e) => console.error("send-voucher dispatch:", e));
+  // @ts-ignore Supabase Edge Runtime
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(p);
+}
+
 interface OrderItem {
   ticket_type_id: string;
   quantity: number;
@@ -191,8 +203,7 @@ Deno.serve(async (req: Request) => {
         const errBody = await mpRes.text();
         console.error("MP preference creation failed:", mpRes.status, errBody);
         await supabase.from("orders").update({ status: "falhou" }).eq("id", order_id);
-        // Debug: retorna detalhe do MP pra investigar (tirar em prod)
-        return jsonError(`MP ${mpRes.status}: ${errBody.slice(0, 600)}`, 502);
+        return jsonError(`Falha ao criar pagamento (MP ${mpRes.status})`, 502);
       }
 
       const pref = (await mpRes.json()) as {
@@ -276,6 +287,9 @@ Deno.serve(async (req: Request) => {
       after_data: { total_cents, ticket_count: ticketRows.length },
       ip,
     });
+
+    // Fire-and-forget: envia voucher por WhatsApp + email
+    fireSendVoucher(order_id);
 
     return new Response(
       JSON.stringify({

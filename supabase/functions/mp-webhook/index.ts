@@ -44,6 +44,18 @@ async function verifyMpSignature(
   return calc === parts.v1;
 }
 
+function fireSendVoucher(order_id: string) {
+  const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/send-voucher`;
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const p = fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ order_id }),
+  }).catch((e) => console.error("send-voucher dispatch:", e));
+  // @ts-ignore Supabase Edge Runtime
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(p);
+}
+
 function jsonError(error: string, status: number) {
   return new Response(JSON.stringify({ error }), {
     status,
@@ -313,6 +325,9 @@ Deno.serve(async (req: Request) => {
           sig_valid: sigValid,
         },
       });
+
+      // Fire-and-forget: envia voucher por WhatsApp + email
+      fireSendVoucher(orderId);
     }
 
     await supabase
