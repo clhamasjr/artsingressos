@@ -81,6 +81,16 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonError("Method not allowed", 405);
 
+  // Aceita Authorization Bearer <service_role> (de outras Edge Functions)
+  // ou header x-internal-secret (pra testes/debug)
+  const auth = req.headers.get("authorization") ?? "";
+  const internalSecret = req.headers.get("x-internal-secret") ?? "";
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const intSecret = Deno.env.get("SEND_VOUCHER_SECRET") ?? "t3st_v0uch3r_pr0xy_2026";
+  if (auth !== `Bearer ${serviceRole}` && internalSecret !== intSecret) {
+    return jsonError("Forbidden", 403);
+  }
+
   try {
     const { order_id } = (await req.json()) as SendVoucherBody;
     if (!order_id) return jsonError("Missing order_id", 400);
