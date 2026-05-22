@@ -91,10 +91,23 @@ export default function Checkout() {
         body: JSON.stringify(body),
       });
 
-      const json = (await res.json()) as { order_id?: string; error?: string };
+      const json = (await res.json()) as {
+        order_id?: string;
+        init_point?: string;
+        mode?: 'mercadopago' | 'mock';
+        error?: string;
+      };
       if (!res.ok || !json.order_id) {
         throw new Error(json.error ?? 'Não foi possível criar o pedido');
       }
+
+      // Modo Mercado Pago: redireciona pra o Checkout Pro
+      if (json.init_point) {
+        window.location.href = json.init_point;
+        return;
+      }
+
+      // Modo mock (sem MP configurado): vai direto pra tela de pedido
       navigate(`/pedido/${json.order_id}`, { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido');

@@ -1,3 +1,9 @@
+// ============================================================
+// create-order
+// Quando MERCADOPAGO_ACCESS_TOKEN esta setado: cria Preference MP
+// e retorna init_point pro front redirecionar (Checkout Pro).
+// Caso contrario: mockaca o pagamento (modo dev).
+// ============================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -20,7 +26,10 @@ async function hmacSha256Hex(key: string, message: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-interface OrderItem { ticket_type_id: string; quantity: number; }
+interface OrderItem {
+  ticket_type_id: string;
+  quantity: number;
+}
 interface CreateOrderBody {
   event_id: string;
   items: OrderItem[];
@@ -29,7 +38,13 @@ interface CreateOrderBody {
   buyer_phone: string;
   buyer_cpf: string;
   payment_method: "pix" | "credit_card";
-  utm?: { source?: string; medium?: string; campaign?: string; term?: string; content?: string };
+  utm?: {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    term?: string;
+    content?: string;
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -55,29 +70,155 @@ Deno.serve(async (req: Request) => {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
     const userAgent = req.headers.get("user-agent") ?? null;
 
-    const { data: reserveData, error: reserveError } = await supabase.rpc("reserve_tickets", {
-      p_event_id: body.event_id,
-      p_items: body.items,
-      p_buyer_name: body.buyer_name,
-      p_buyer_email: body.buyer_email,
-      p_buyer_phone: body.buyer_phone,
-      p_buyer_cpf: body.buyer_cpf,
-      p_utm: body.utm ?? {},
-      p_ip: ip,
-      p_user_agent: userAgent,
-    });
+    // RESERVA (lock pessimista, recalcula total no server)
+    const { data: reserveData, error: reserveError } = await supabase.rpc(
+      "reserve_tickets",
+      {
+        p_event_id: body.event_id,
+        p_items: body.items,
+        p_buyer_name: body.buyer_name,
+        p_buyer_email: body.buyer_email,
+        p_buyer_phone: body.buyer_phone,
+        p_buyer_cpf: body.buyer_cpf,
+        p_utm: body.utm ?? {},
+        p_ip: ip,
+        p_user_agent: userAgent,
+      }
+    );
 
     if (reserveError) {
-      const msg = reserveError.message ?? "";
-      return jsonError(mapReserveError(msg), 400);
+      return jsonError(mapReserveError(reserveError.message ?? ""), 400);
     }
     if (!reserveData || !Array.isArray(reserveData) || reserveData.length === 0) {
       return jsonError("Reserve failed", 500);
     }
-    const { order_id, total_cents } = reserveData[0] as { order_id: string; total_cents: number };
+    const { order_id, total_cents } = reserveData[0] as {
+      order_id: string;
+      total_cents: number;
+    };
+
+    const mpToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    const siteUrl = Deno.env.get("SITE_URL") ?? "https://artsingressos.vercel.app";
+
+    if (mpToken) {
+      // ============================================================
+      // MODO PRODUCAO: cria Preference no Mercado Pago
+      // ============================================================
+      const { data: orderItemsExpanded } = await supabase
+        .from("order_items")
+        .select("quantity, unit_price_cents, ticket_types(name), orders(event_id, events(name))")
+        .eq("order_id", order_id);
+
+      // Monta items pro MP
+      const mpItems = (orderItemsExpanded ?? []).map((oi) => {
+        const itemRow = oi as unknown as {
+          quantity: number;
+          unit_price_cents: number;
+          ticket_types: { name: string } | null;
+          orders: { events: { name: string } | null } | null;
+        };
+        return {
+          id: order_id,
+          title: `${itemRow.ticket_types?.name ?? "Ingresso"} - ${
+            itemRow.orders?.events?.name ?? "Evento"
+          }`,
+          quantity: itemRow.quantity,
+          currency_id: "BRL",
+          unit_price: itemRow.unit_price_cents / 100,
+        };
+      });
+
+      // payment_methods.default_payment_method_id pra forçar Pix se escolhido
+      const paymentMethodsCfg: Record<string, unknown> = {
+        installments: 12,
+      };
+      if (body.payment_method === "pix") {
+        paymentMethodsCfg.default_payment_method_id = "pix";
+        paymentMethodsCfg.excluded_payment_types = [
+          { id: "credit_card" },
+          { id: "debit_card" },
+          { id: "ticket" },
+          { id: "atm" },
+        ];
+      } else {
+        // cartao: bloqueia pix/boleto
+        paymentMethodsCfg.excluded_payment_types = [
+          { id: "ticket" },
+          { id: "atm" },
+        ];
+        paymentMethodsCfg.excluded_payment_methods = [{ id: "pix" }];
+      }
+
+      const preferencePayload = {
+        external_reference: order_id,
+        items: mpItems,
+        payer: {
+          name: body.buyer_name,
+          email: body.buyer_email,
+          phone: { area_code: body.buyer_phone.slice(0, 2), number: body.buyer_phone.slice(2) },
+          identification: { type: "CPF", number: body.buyer_cpf },
+        },
+        payment_methods: paymentMethodsCfg,
+        back_urls: {
+          success: `${siteUrl}/pedido/${order_id}`,
+          pending: `${siteUrl}/pedido/${order_id}`,
+          failure: `${siteUrl}/pedido/${order_id}`,
+        },
+        auto_return: "approved",
+        notification_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/mp-webhook`,
+        statement_descriptor: "ARTSINGRESSOS",
+        binary_mode: false,
+        expires: true,
+        expiration_date_to: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      };
+
+      const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": order_id,
+        },
+        body: JSON.stringify(preferencePayload),
+      });
+
+      if (!mpRes.ok) {
+        const errBody = await mpRes.text();
+        console.error("MP preference creation failed:", mpRes.status, errBody);
+        // Rollback: marca order como falhou
+        await supabase.from("orders").update({ status: "falhou" }).eq("id", order_id);
+        return jsonError(`Falha ao criar pagamento no Mercado Pago: ${mpRes.status}`, 502);
+      }
+
+      const pref = (await mpRes.json()) as {
+        id: string;
+        init_point: string;
+        sandbox_init_point: string;
+      };
+
+      // Decide qual init_point usar baseado no token (teste vs prod)
+      const isTestToken = mpToken.includes("TEST-");
+      const checkoutUrl = isTestToken ? pref.sandbox_init_point : pref.init_point;
+
+      await supabase
+        .from("orders")
+        .update({ mp_preference_id: pref.id })
+        .eq("id", order_id);
+
+      return new Response(
+        JSON.stringify({
+          order_id,
+          total_cents,
+          mode: "mercadopago",
+          preference_id: pref.id,
+          init_point: checkoutUrl,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // ============================================================
-    // MOCK PAYMENT - substituir por integracao Mercado Pago
+    // MODO DEV/MOCK: marca pago direto, gera tickets
     // ============================================================
     await supabase
       .from("orders")
@@ -95,7 +236,12 @@ Deno.serve(async (req: Request) => {
       .eq("order_id", order_id);
 
     const hmacSecret = Deno.env.get("VOUCHER_HMAC_SECRET") ?? "DEV_INSECURE_KEY_CHANGE_ME";
-    const ticketRows: Array<{ order_id: string; ticket_type_id: string; event_id: string; hash: string }> = [];
+    const ticketRows: Array<{
+      order_id: string;
+      ticket_type_id: string;
+      event_id: string;
+      hash: string;
+    }> = [];
 
     for (const item of orderItems ?? []) {
       for (let i = 0; i < item.quantity; i++) {
@@ -104,16 +250,17 @@ Deno.serve(async (req: Request) => {
           hmacSecret,
           `${ticketId}|${body.event_id}|${order_id}|${item.ticket_type_id}`
         );
-        ticketRows.push({ order_id, ticket_type_id: item.ticket_type_id, event_id: body.event_id, hash });
+        ticketRows.push({
+          order_id,
+          ticket_type_id: item.ticket_type_id,
+          event_id: body.event_id,
+          hash,
+        });
       }
     }
 
     if (ticketRows.length > 0) {
-      const { error: insertError } = await supabase.from("tickets").insert(ticketRows);
-      if (insertError) {
-        console.error("Failed to create tickets:", insertError);
-        return jsonError("Failed to create tickets", 500);
-      }
+      await supabase.from("tickets").insert(ticketRows);
     }
 
     await supabase.from("audit_log").insert({
@@ -126,11 +273,16 @@ Deno.serve(async (req: Request) => {
     });
 
     return new Response(
-      JSON.stringify({ order_id, total_cents, ticket_count: ticketRows.length }),
+      JSON.stringify({
+        order_id,
+        total_cents,
+        mode: "mock",
+        ticket_count: ticketRows.length,
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
-    console.error(e);
+    console.error("create-order error:", e);
     return jsonError(e instanceof Error ? e.message : "Unknown error", 500);
   }
 });
