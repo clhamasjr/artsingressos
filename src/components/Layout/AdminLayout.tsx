@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Receipt, LogOut, ScanLine, Activity, Users, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Calendar, Receipt, LogOut, ScanLine, Activity, Users, ShoppingCart, TrendingUp, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Spinner } from '@/components/ui/Spinner';
 
@@ -67,6 +67,8 @@ export function AdminLayout({ children, requireAdmin = false }: AdminLayoutProps
     { to: '/admin/checkin', icon: ScanLine, label: 'Check-in' },
     { to: '/admin/contagem', icon: Activity, label: 'Contagem' },
     { to: '/admin/operadores', icon: Users, label: 'Operadores', adminOnly: true },
+    { to: '/admin/ad-spend', icon: DollarSign, label: 'Gasto ads', adminOnly: true },
+    { to: '/admin/roi', icon: TrendingUp, label: 'ROI', adminOnly: true },
   ];
 
   const isActive = (to: string, exact = false) =>
