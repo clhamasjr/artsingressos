@@ -6,6 +6,7 @@ import { supabase, type Tables } from '@/lib/supabase';
 import { formatBRL, parseBRLToCents, slugify } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
+import { ImageUpload } from '@/components/ui/ImageUpload';
 
 type AdminEvent = Tables<'events'>;
 type LotRow = Tables<'ticket_types'>;
@@ -208,23 +209,24 @@ export default function EventEditor() {
           />
         </Field>
 
-        <Field label="URL do banner (imagem)">
-          <input
-            value={current.banner_url ?? ''}
-            onChange={(e) => set('banner_url', e.target.value || null)}
-            className="input"
-            placeholder="https://..."
+        <Field label="Banner do evento" hint="Imagem que aparece na vitrine e na página do evento. Recomendado 1200×675.">
+          <ImageUpload
+            value={current.banner_url ?? null}
+            onChange={(url) => set('banner_url', url)}
+            folder={`events/${event.id}/banner`}
+            placeholder="Clique pra enviar o banner"
+            size="lg"
           />
         </Field>
 
         {/* Mensagem de boas-vindas — usada no WhatsApp pós check-in */}
-        <div className="pt-4 border-t border-slate-200 -mx-0">
+        <div className="pt-4 border-t border-slate-200">
           <h3 className="font-semibold text-slate-900 mb-1">Boas-vindas pós check-in</h3>
           <p className="text-xs text-slate-500 mb-4">
-            Mensagem enviada automaticamente por WhatsApp quando o participante passar pela portaria.
+            Enviado automaticamente por WhatsApp quando o participante passar pela portaria.
           </p>
 
-          <Field label="Mensagem de boas-vindas" hint="Tom acolhedor, frase curta. Deixe vazio pra não enviar.">
+          <Field label="Mensagem de boas-vindas (texto)" hint="Tom acolhedor, frase curta. Deixe vazio pra não enviar.">
             <textarea
               value={current.welcome_message ?? ''}
               onChange={(e) => set('welcome_message', e.target.value || null)}
@@ -235,7 +237,20 @@ export default function EventEditor() {
           </Field>
 
           <Field
-            label="Programação do evento"
+            label="Programação (imagem)"
+            hint="Envie um cartaz/flyer com a programação. Se enviar imagem, o texto abaixo é ignorado."
+          >
+            <ImageUpload
+              value={current.programming_image_url ?? null}
+              onChange={(url) => set('programming_image_url', url)}
+              folder={`events/${event.id}/programming`}
+              placeholder="Clique pra enviar a imagem da programação"
+              size="md"
+            />
+          </Field>
+
+          <Field
+            label="Programação (texto — alternativa à imagem)"
             hint="Cada linha vira uma linha na mensagem. Use horários e atrações."
           >
             <textarea
@@ -247,12 +262,16 @@ export default function EventEditor() {
             />
           </Field>
 
-          <Field label="URL do mapa (Google Maps, Waze, etc.)" hint="Opcional. Aparece no fim da mensagem.">
-            <input
-              value={current.map_url ?? ''}
-              onChange={(e) => set('map_url', e.target.value || null)}
-              className="input"
-              placeholder="https://maps.google.com/?q=..."
+          <Field
+            label="Croqui / planta do local (imagem)"
+            hint="Mapa interno do local com palco, bar, banheiros, saídas. Enviado junto com as boas-vindas."
+          >
+            <ImageUpload
+              value={current.map_url ?? null}
+              onChange={(url) => set('map_url', url)}
+              folder={`events/${event.id}/map`}
+              placeholder="Clique pra enviar o croqui do local"
+              size="md"
             />
           </Field>
         </div>

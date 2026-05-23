@@ -186,6 +186,7 @@ export type Database = {
           map_url: string | null
           name: string
           programming: string | null
+          programming_image_url: string | null
           slug: string
           starts_at: string
           status: Database["public"]["Enums"]["event_status"]
@@ -203,6 +204,7 @@ export type Database = {
           map_url?: string | null
           name: string
           programming?: string | null
+          programming_image_url?: string | null
           slug: string
           starts_at: string
           status?: Database["public"]["Enums"]["event_status"]
@@ -220,6 +222,7 @@ export type Database = {
           map_url?: string | null
           name?: string
           programming?: string | null
+          programming_image_url?: string | null
           slug?: string
           starts_at?: string
           status?: Database["public"]["Enums"]["event_status"]
