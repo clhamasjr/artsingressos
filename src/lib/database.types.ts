@@ -183,11 +183,14 @@ export type Database = {
           id: string
           location_address: string | null
           location_name: string | null
+          map_url: string | null
           name: string
+          programming: string | null
           slug: string
           starts_at: string
           status: Database["public"]["Enums"]["event_status"]
           updated_at: string
+          welcome_message: string | null
         }
         Insert: {
           banner_url?: string | null
@@ -197,11 +200,14 @@ export type Database = {
           id?: string
           location_address?: string | null
           location_name?: string | null
+          map_url?: string | null
           name: string
+          programming?: string | null
           slug: string
           starts_at: string
           status?: Database["public"]["Enums"]["event_status"]
           updated_at?: string
+          welcome_message?: string | null
         }
         Update: {
           banner_url?: string | null
@@ -211,11 +217,14 @@ export type Database = {
           id?: string
           location_address?: string | null
           location_name?: string | null
+          map_url?: string | null
           name?: string
+          programming?: string | null
           slug?: string
           starts_at?: string
           status?: Database["public"]["Enums"]["event_status"]
           updated_at?: string
+          welcome_message?: string | null
         }
         Relationships: []
       }

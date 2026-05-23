@@ -217,6 +217,46 @@ export default function EventEditor() {
           />
         </Field>
 
+        {/* Mensagem de boas-vindas — usada no WhatsApp pós check-in */}
+        <div className="pt-4 border-t border-slate-200 -mx-0">
+          <h3 className="font-semibold text-slate-900 mb-1">Boas-vindas pós check-in</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Mensagem enviada automaticamente por WhatsApp quando o participante passar pela portaria.
+          </p>
+
+          <Field label="Mensagem de boas-vindas" hint="Tom acolhedor, frase curta. Deixe vazio pra não enviar.">
+            <textarea
+              value={current.welcome_message ?? ''}
+              onChange={(e) => set('welcome_message', e.target.value || null)}
+              rows={3}
+              className="input"
+              placeholder="Ex: Estamos muito felizes em receber você! Aproveite a noite com a gente."
+            />
+          </Field>
+
+          <Field
+            label="Programação do evento"
+            hint="Cada linha vira uma linha na mensagem. Use horários e atrações."
+          >
+            <textarea
+              value={current.programming ?? ''}
+              onChange={(e) => set('programming', e.target.value || null)}
+              rows={5}
+              className="input"
+              placeholder={'20:00 - Abertura\n21:00 - Banda XYZ\n22:30 - DJ ABC\n00:00 - Encerramento'}
+            />
+          </Field>
+
+          <Field label="URL do mapa (Google Maps, Waze, etc.)" hint="Opcional. Aparece no fim da mensagem.">
+            <input
+              value={current.map_url ?? ''}
+              onChange={(e) => set('map_url', e.target.value || null)}
+              className="input"
+              placeholder="https://maps.google.com/?q=..."
+            />
+          </Field>
+        </div>
+
         {dirty && (
           <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
             <button

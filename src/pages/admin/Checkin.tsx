@@ -150,6 +150,21 @@ export default function AdminCheckin() {
           playBeep(880, 0.15);
           setTimeout(() => playBeep(1320, 0.2), 150);
           navigator.vibrate?.(150);
+          // Fire-and-forget: dispara mensagem de boas-vindas
+          if (r.ticket_id) {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token;
+            fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-welcome`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                'x-internal-secret': 't3st_v0uch3r_pr0xy_2026',
+              },
+              body: JSON.stringify({ ticket_id: r.ticket_id }),
+            }).catch((e) => console.warn('send-welcome failed:', e));
+          }
         } else if (r.result === 'ja_usado') {
           playBeep(440, 0.3);
           navigator.vibrate?.([200, 100, 200]);
