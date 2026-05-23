@@ -4,6 +4,7 @@ import { CheckCircle2, Clock, AlertCircle, Ticket, ArrowRight } from 'lucide-rea
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatBRL } from '@/lib/utils';
+import { trackPurchase } from '@/lib/pixels';
 
 interface OrderResponse {
   id: string;
@@ -57,6 +58,22 @@ export default function OrderStatus() {
       canceled = true;
     };
   }, [orderId]);
+
+  // Dispara Purchase no Meta/TikTok quando pedido carrega como pago (1x)
+  const [purchaseTracked, setPurchaseTracked] = useState(false);
+  useEffect(() => {
+    if (order && order.status === 'pago' && !purchaseTracked) {
+      trackPurchase({
+        value: order.total_cents / 100,
+        currency: 'BRL',
+        content_ids: [order.id],
+        content_name: order.event_name,
+        num_items: order.tickets.length,
+        order_id: order.id,
+      });
+      setPurchaseTracked(true);
+    }
+  }, [order, purchaseTracked]);
 
   if (loading) {
     return (

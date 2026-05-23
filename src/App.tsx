@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { PublicLayout } from '@/components/Layout/PublicLayout';
 import { AdminLayout } from '@/components/Layout/AdminLayout';
+import { Pixels } from '@/components/Pixels';
 import Home from '@/pages/public/Home';
 import EventDetail from '@/pages/public/EventDetail';
 import Checkout from '@/pages/public/Checkout';
@@ -22,6 +23,8 @@ import CustomerAccount from '@/pages/customer/Account';
 
 export default function App() {
   return (
+    <>
+    <Pixels />
     <Routes>
       {/* Públicas */}
       <Route path="/" element={<PublicLayout><Home /></PublicLayout>} />
@@ -48,5 +51,6 @@ export default function App() {
 
       <Route path="*" element={<PublicLayout><NotFound /></PublicLayout>} />
     </Routes>
+    </>
   );
 }

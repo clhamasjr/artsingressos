@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Calendar, MapPin, Minus, Plus, AlertCircle } from 'lucide-react';
 import { useEvent } from '@/hooks/useEvent';
@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatBRL } from '@/lib/utils';
 import { formatEventDate } from '@/lib/date';
+import { trackViewContent, trackInitiateCheckout } from '@/lib/pixels';
 
 export interface HolderInput {
   name: string;
@@ -39,6 +40,17 @@ export default function EventDetail() {
   const { data, isLoading, error } = useEvent(slug);
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  // Track ViewContent quando evento carrega
+  useEffect(() => {
+    if (data) {
+      trackViewContent({
+        content_ids: [data.id],
+        content_name: data.name,
+        content_category: 'event',
+      });
+    }
+  }, [data]);
 
   const items = useMemo<CheckoutItem[]>(() => {
     if (!data) return [];
@@ -101,6 +113,13 @@ export default function EventDetail() {
 
   const handleContinue = () => {
     if (!data || items.length === 0) return;
+    trackInitiateCheckout({
+      content_ids: [data.id],
+      content_name: data.name,
+      value: totalCents / 100,
+      currency: 'BRL',
+      num_items: totalQuantity,
+    });
     const state: CheckoutState = {
       eventId: data.id,
       eventName: data.name,
