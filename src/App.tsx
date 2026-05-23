@@ -15,6 +15,7 @@ import AdminOrders from '@/pages/admin/Orders';
 import AdminCheckin from '@/pages/admin/Checkin';
 import AdminContagem from '@/pages/admin/Contagem';
 import AdminOperators from '@/pages/admin/Operators';
+import AdminPdv from '@/pages/admin/Pdv';
 import CustomerSignup from '@/pages/customer/Signup';
 import CustomerLogin from '@/pages/customer/Login';
 import CustomerAccount from '@/pages/customer/Account';
@@ -43,6 +44,7 @@ export default function App() {
       <Route path="/admin/operadores" element={<AdminLayout requireAdmin><AdminOperators /></AdminLayout>} />
       <Route path="/admin/checkin" element={<AdminLayout><AdminCheckin /></AdminLayout>} />
       <Route path="/admin/contagem" element={<AdminLayout><AdminContagem /></AdminLayout>} />
+      <Route path="/admin/pdv" element={<AdminLayout><AdminPdv /></AdminLayout>} />
 
       <Route path="*" element={<PublicLayout><NotFound /></PublicLayout>} />
     </Routes>
