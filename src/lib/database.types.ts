@@ -119,6 +119,36 @@ export type Database = {
         }
         Relationships: []
       }
+      customers: {
+        Row: {
+          id: string
+          email: string
+          name: string
+          phone: string | null
+          cpf: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          name: string
+          phone?: string | null
+          cpf?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string
+          phone?: string | null
+          cpf?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       checkins: {
         Row: {
           device: string | null
@@ -283,6 +313,7 @@ export type Database = {
           buyer_name: string
           buyer_phone: string
           created_at: string
+          customer_id: string | null
           event_id: string
           expires_at: string
           id: string

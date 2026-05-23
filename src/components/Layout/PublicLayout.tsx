@@ -1,11 +1,14 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { User } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PublicLayoutProps {
   children: ReactNode;
 }
 
 export function PublicLayout({ children }: PublicLayoutProps) {
+  const { isCustomer, customer, isAdmin } = useAuth();
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-slate-200 bg-white sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -18,16 +21,36 @@ export function PublicLayout({ children }: PublicLayoutProps) {
               Arts Ingressos
             </span>
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex items-center gap-3 text-sm">
             <Link to="/" className="text-slate-600 hover:text-brand-600 transition-colors">
               Eventos
             </Link>
-            <Link
-              to="/admin"
-              className="text-slate-500 hover:text-slate-900 transition-colors"
-            >
-              Admin
-            </Link>
+            {isCustomer ? (
+              <Link
+                to="/conta"
+                className="inline-flex items-center gap-1.5 text-slate-700 hover:text-brand-600 font-medium transition-colors"
+              >
+                <User className="h-4 w-4" />
+                <span className="hidden sm:inline">{customer?.name?.split(' ')[0] ?? 'Minha conta'}</span>
+              </Link>
+            ) : (
+              <>
+                <Link to="/conta/login" className="text-slate-600 hover:text-brand-600 transition-colors">
+                  Entrar
+                </Link>
+                <Link to="/conta/cadastro" className="hidden sm:inline-flex btn-primary !py-1.5 !px-3 text-xs">
+                  Criar conta
+                </Link>
+              </>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="text-slate-500 hover:text-slate-900 transition-colors hidden sm:inline"
+              >
+                Admin
+              </Link>
+            )}
           </nav>
         </div>
       </header>

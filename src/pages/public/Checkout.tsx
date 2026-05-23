@@ -3,19 +3,14 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, ShieldCheck, Smartphone, CreditCard } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Smartphone, CreditCard, User } from 'lucide-react';
 import type { CheckoutState } from './EventDetail';
-import { formatBRL, isValidCPF, formatCPF } from '@/lib/utils';
+import { formatBRL, formatCPF } from '@/lib/utils';
 import { Spinner } from '@/components/ui/Spinner';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 const checkoutSchema = z.object({
-  buyer_name: z.string().min(3, 'Informe seu nome completo'),
-  buyer_email: z.string().email('E-mail inválido'),
-  buyer_phone: z
-    .string()
-    .min(11, 'WhatsApp deve ter DDD + número')
-    .max(15, 'Número muito longo'),
-  buyer_cpf: z.string().refine((v) => isValidCPF(v), 'CPF inválido'),
   payment_method: z.enum(['pix', 'credit_card']),
   accept_terms: z.literal(true, {
     errorMap: () => ({ message: 'Você precisa aceitar os termos' }),
@@ -24,10 +19,29 @@ const checkoutSchema = z.object({
 
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
+// Persiste estado da intenção de compra durante login/cadastro
+const CHECKOUT_INTENT_KEY = 'checkout_intent_v1';
+
 export default function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const state = (location.state ?? null) as CheckoutState | null;
+  const { customer, isCustomer, loading: authLoading } = useAuth();
+
+  // Resolve estado: prioriza location.state, depois sessionStorage (vindo de login)
+  const [state] = useState<CheckoutState | null>(() => {
+    const fromLocation = (location.state ?? null) as CheckoutState | null;
+    if (fromLocation?.items?.length) {
+      try {
+        sessionStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(fromLocation));
+      } catch { /* ignore */ }
+      return fromLocation;
+    }
+    try {
+      const raw = sessionStorage.getItem(CHECKOUT_INTENT_KEY);
+      if (raw) return JSON.parse(raw) as CheckoutState;
+    } catch { /* ignore */ }
+    return null;
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +49,6 @@ export default function Checkout() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
@@ -45,39 +57,11 @@ export default function Checkout() {
     },
   });
 
-  // Quando validação falha, faz scroll pro primeiro erro e mostra banner
   const onInvalid = (errs: typeof errors) => {
-    console.warn('[Checkout] Validacao falhou:', errs);
-    const order: (keyof CheckoutForm)[] = [
-      'buyer_name',
-      'buyer_email',
-      'buyer_phone',
-      'buyer_cpf',
-      'payment_method',
-      'accept_terms',
-    ];
-    const firstErrorKey = order.find((k) => errs[k]);
-    const missingFields = order
-      .filter((k) => errs[k])
-      .map((k) => {
-        switch (k) {
-          case 'buyer_name': return 'Nome';
-          case 'buyer_email': return 'E-mail';
-          case 'buyer_phone': return 'WhatsApp';
-          case 'buyer_cpf': return 'CPF';
-          case 'payment_method': return 'Forma de pagamento';
-          case 'accept_terms': return 'Aceite dos Termos';
-        }
-      })
-      .join(', ');
-    if (firstErrorKey) {
-      const el = document.querySelector(
-        `[name="${firstErrorKey}"]`
-      ) as HTMLElement | null;
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el?.focus?.();
-    }
-    setError(`Confira: ${missingFields}`);
+    const missing: string[] = [];
+    if (errs.payment_method) missing.push('Forma de pagamento');
+    if (errs.accept_terms) missing.push('Aceite dos Termos');
+    setError(`Confira: ${missing.join(', ')}`);
   };
 
   // Se não veio estado de checkout, redireciona pra home
@@ -88,8 +72,27 @@ export default function Checkout() {
     }
   }, [state, navigate]);
 
+  // Se não está logado como customer, força login
+  useEffect(() => {
+    if (!authLoading && state && !isCustomer) {
+      navigate(`/conta/login?next=${encodeURIComponent('/checkout')}`, { replace: true });
+    }
+  }, [authLoading, isCustomer, state, navigate]);
+
   if (!state || state.items.length === 0) {
     return <Navigate to="/" replace />;
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-[40vh] flex items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (!isCustomer || !customer) {
+    return null; // useEffect já está redirecionando
   }
 
   const onSubmit = async (data: CheckoutForm) => {
@@ -97,16 +100,20 @@ export default function Checkout() {
     setSubmitting(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-order`;
+      const sessionRes = await supabase.auth.getSession();
+      const accessToken = sessionRes.data.session?.access_token;
+
       const body = {
         event_id: state.eventId,
         items: state.items.map((i) => ({
           ticket_type_id: i.ticket_type_id,
           quantity: i.quantity,
         })),
-        buyer_name: data.buyer_name,
-        buyer_email: data.buyer_email,
-        buyer_phone: data.buyer_phone.replace(/\D/g, ''),
-        buyer_cpf: data.buyer_cpf.replace(/\D/g, ''),
+        // Dados do comprador vêm do customer (sem precisar form)
+        buyer_name: customer.name,
+        buyer_email: customer.email,
+        buyer_phone: (customer.phone ?? '').replace(/\D/g, ''),
+        buyer_cpf: (customer.cpf ?? '').replace(/\D/g, ''),
         payment_method: data.payment_method,
         utm: {
           source: new URLSearchParams(location.search).get('utm_source') ?? undefined,
@@ -122,6 +129,7 @@ export default function Checkout() {
         headers: {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify(body),
       });
@@ -135,6 +143,9 @@ export default function Checkout() {
       if (!res.ok || !json.order_id) {
         throw new Error(json.error ?? 'Não foi possível criar o pedido');
       }
+
+      // Limpa intent persistida após sucesso
+      try { sessionStorage.removeItem(CHECKOUT_INTENT_KEY); } catch { /* ignore */ }
 
       // Modo Mercado Pago: redireciona pra o Checkout Pro
       if (json.init_point) {
@@ -151,14 +162,6 @@ export default function Checkout() {
     }
   };
 
-  const cpfValue = watch('buyer_cpf');
-  useEffect(() => {
-    if (cpfValue) {
-      const formatted = formatCPF(cpfValue);
-      if (formatted !== cpfValue) setValue('buyer_cpf', formatted);
-    }
-  }, [cpfValue, setValue]);
-
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8">
       <Link
@@ -174,50 +177,25 @@ export default function Checkout() {
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna principal */}
         <div className="lg:col-span-2 space-y-5">
+          {/* Dados do comprador (vindos da conta) */}
           <div className="card">
-            <h2 className="font-semibold text-slate-900 mb-4">Seus dados</h2>
-            <div className="space-y-4">
-              <Field label="Nome completo" error={errors.buyer_name?.message}>
-                <input
-                  {...register('buyer_name')}
-                  className="input"
-                  placeholder="Como está no documento"
-                  autoComplete="name"
-                />
-              </Field>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="E-mail" error={errors.buyer_email?.message}>
-                  <input
-                    {...register('buyer_email')}
-                    type="email"
-                    className="input"
-                    placeholder="seu@email.com"
-                    autoComplete="email"
-                  />
-                </Field>
-
-                <Field label="WhatsApp (com DDD)" error={errors.buyer_phone?.message}>
-                  <input
-                    {...register('buyer_phone')}
-                    className="input"
-                    placeholder="(11) 91234-5678"
-                    autoComplete="tel"
-                    inputMode="tel"
-                  />
-                </Field>
-              </div>
-
-              <Field label="CPF" error={errors.buyer_cpf?.message}>
-                <input
-                  {...register('buyer_cpf')}
-                  className="input"
-                  placeholder="000.000.000-00"
-                  inputMode="numeric"
-                  maxLength={14}
-                />
-              </Field>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+                <User className="h-4 w-4" /> Comprador
+              </h2>
+              <Link to="/conta" className="text-xs text-brand-600 hover:underline">Editar dados</Link>
             </div>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div><dt className="text-xs text-slate-500">Nome</dt><dd className="text-slate-900 font-medium">{customer.name}</dd></div>
+              <div><dt className="text-xs text-slate-500">E-mail</dt><dd className="text-slate-900">{customer.email}</dd></div>
+              <div><dt className="text-xs text-slate-500">WhatsApp</dt><dd className="text-slate-900">{customer.phone ?? '—'}</dd></div>
+              <div><dt className="text-xs text-slate-500">CPF</dt><dd className="text-slate-900 font-mono">{customer.cpf ? formatCPF(customer.cpf) : '—'}</dd></div>
+            </dl>
+            {(!customer.phone || !customer.cpf) && (
+              <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                Complete WhatsApp e CPF na sua <Link to="/conta" className="underline">conta</Link> antes de continuar.
+              </p>
+            )}
           </div>
 
           <div className="card">
@@ -317,23 +295,7 @@ export default function Checkout() {
   );
 }
 
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1.5">{label}</label>
-      {children}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-    </div>
-  );
-}
+/* Field component removido — não usado após exigir login pro checkout */
 
 interface PaymentOptionProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;

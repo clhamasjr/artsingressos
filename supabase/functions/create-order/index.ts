@@ -109,6 +109,26 @@ Deno.serve(async (req: Request) => {
       total_cents: number;
     };
 
+    // Se o request veio com JWT de customer, salva o customer_id na order
+    const authHeader = req.headers.get("authorization") ?? "";
+    if (authHeader.startsWith("Bearer ")) {
+      const userToken = authHeader.slice(7);
+      try {
+        const userClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+          { global: { headers: { Authorization: `Bearer ${userToken}` } } }
+        );
+        const { data: userInfo } = await userClient.auth.getUser();
+        const uid = userInfo?.user?.id;
+        if (uid) {
+          await supabase.from("orders").update({ customer_id: uid }).eq("id", order_id);
+        }
+      } catch (e) {
+        console.warn("Could not resolve customer_id from JWT:", e);
+      }
+    }
+
     const mpToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
     const siteUrl = Deno.env.get("SITE_URL") ?? "https://artsingressos.vercel.app";
 

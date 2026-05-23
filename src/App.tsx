@@ -15,6 +15,9 @@ import AdminOrders from '@/pages/admin/Orders';
 import AdminCheckin from '@/pages/admin/Checkin';
 import AdminContagem from '@/pages/admin/Contagem';
 import AdminOperators from '@/pages/admin/Operators';
+import CustomerSignup from '@/pages/customer/Signup';
+import CustomerLogin from '@/pages/customer/Login';
+import CustomerAccount from '@/pages/customer/Account';
 
 export default function App() {
   return (
@@ -25,6 +28,11 @@ export default function App() {
       <Route path="/checkout" element={<PublicLayout><Checkout /></PublicLayout>} />
       <Route path="/pedido/:orderId" element={<PublicLayout><OrderStatus /></PublicLayout>} />
       <Route path="/voucher/:hash" element={<PublicLayout><Voucher /></PublicLayout>} />
+
+      {/* Conta de cliente */}
+      <Route path="/conta/cadastro" element={<CustomerSignup />} />
+      <Route path="/conta/login" element={<CustomerLogin />} />
+      <Route path="/conta" element={<PublicLayout><CustomerAccount /></PublicLayout>} />
 
       {/* Admin */}
       <Route path="/admin/login" element={<AdminLogin />} />
