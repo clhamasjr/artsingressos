@@ -7,6 +7,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { formatBRL } from '@/lib/utils';
 import { formatEventDate } from '@/lib/date';
 
+export interface HolderInput {
+  name: string;
+  email: string;
+  cpf: string;
+  phone: string;
+  /** true = ingresso usa dados do comprador (criança, etc) */
+  same_as_buyer: boolean;
+}
+
 export interface CheckoutItem {
   ticket_type_id: string;
   name: string;

@@ -1,74 +1,16 @@
 // ============================================================
-// send-voucher
-// Recebe { order_id }, busca order+tickets+event, envia:
-//   1) WhatsApp via Evolution API (se EVOLUTION_* env vars setadas)
-//   2) Email via Resend (se RESEND_API_KEY setada)
-// Tolera ausencia de credenciais (skip silencioso).
-// Chamada INTERNAMENTE por outras Edge Functions (verify_jwt: true).
+// send-voucher (v3 — holders aware)
+// Agrupa tickets por contato (phone+email). Envia 1 mensagem por contato único.
+// Se holder.phone/email = buyer's, considera mesmo contato (criança/pais).
 // ============================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-interface SendVoucherBody { order_id: string; }
-
-interface OrderRow {
-  buyer_name: string;
-  buyer_email: string;
-  buyer_phone: string;
-  total_cents: number;
-  events: {
-    name: string;
-    slug: string;
-    starts_at: string;
-    location_name: string | null;
-    location_address: string | null;
-  } | null;
-  tickets: Array<{ hash: string; ticket_types: { name: string } | null }>;
-}
-
-function escapeHtml(s: string): string {
-  const map: Record<string, string> = {
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  };
-  return String(s).replace(/[&<>"']/g, (c) => map[c]);
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} as ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function buildEmailHtml(o: OrderRow, siteUrl: string, eventDate: string): string {
-  const tickets = o.tickets.map((t, i) => `
-    <tr><td style="padding:10px 0;border-bottom:1px solid #eee">
-      <strong>${i + 1}. ${escapeHtml(t.ticket_types?.name ?? "Ingresso")}</strong><br>
-      <a href="${siteUrl}/voucher/${t.hash}" style="color:#ea580c;text-decoration:none">
-        Abrir voucher (QR Code) &rarr;
-      </a>
-    </td></tr>
-  `).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,Inter,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1f2937;background:#f8fafc">
-  <div style="background:white;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
-    <h1 style="color:#ea580c;margin:0 0 8px 0;font-size:22px">Compra confirmada</h1>
-    <p style="margin:0 0 16px 0;color:#64748b">Ola, <strong>${escapeHtml(o.buyer_name)}</strong>!</p>
-    <p>Sua compra para <strong>${escapeHtml(o.events?.name ?? "Arts Ingressos")}</strong> foi confirmada.</p>
-    ${eventDate ? `<p style="margin:8px 0"><strong>Data:</strong> ${eventDate}</p>` : ""}
-    ${o.events?.location_name ? `<p style="margin:8px 0"><strong>Local:</strong> ${escapeHtml(o.events.location_name)}</p>` : ""}
-    <h2 style="font-size:16px;margin-top:24px;color:#0f172a">Seus ingressos (${o.tickets.length})</h2>
-    <table style="width:100%;border-collapse:collapse">${tickets}</table>
-    <hr style="margin:24px 0;border:0;border-top:1px solid #e2e8f0">
-    <p style="color:#94a3b8;font-size:12px;margin:0">Apresente o QR Code na entrada. Cada link contem um voucher unico.</p>
-  </div>
-</body></html>`;
-}
 
 function jsonError(error: string, status: number) {
   return new Response(JSON.stringify({ error }), {
@@ -77,139 +19,167 @@ function jsonError(error: string, status: number) {
   });
 }
 
+interface OrderRow {
+  buyer_name: string;
+  buyer_email: string;
+  buyer_phone: string;
+  events: { name: string; starts_at: string; location_name: string | null; location_address: string | null } | null;
+}
+
+interface TicketRow {
+  id: string;
+  hash: string;
+  holder_name: string | null;
+  holder_email: string | null;
+  holder_phone: string | null;
+  ticket_types: { name: string } | null;
+}
+
+interface Contact {
+  name: string;
+  email: string;
+  phone: string;
+  tickets: Array<{ hash: string; ticket_type_name: string }>;
+}
+
+function normalizePhone(p: string): string {
+  return p.replace(/\D/g, "");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonError("Method not allowed", 405);
 
-  // Aceita Authorization Bearer <service_role> (de outras Edge Functions)
-  // ou header x-internal-secret (pra testes/debug)
   const auth = req.headers.get("authorization") ?? "";
   const internalSecret = req.headers.get("x-internal-secret") ?? "";
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const intSecret = Deno.env.get("SEND_VOUCHER_SECRET") ?? "t3st_v0uch3r_pr0xy_2026";
-  if (auth !== `Bearer ${serviceRole}` && internalSecret !== intSecret) {
-    return jsonError("Forbidden", 403);
-  }
+  if (auth !== `Bearer ${serviceRole}` && internalSecret !== intSecret) return jsonError("Forbidden", 403);
 
   try {
-    const { order_id } = (await req.json()) as SendVoucherBody;
+    const { order_id } = (await req.json()) as { order_id: string };
     if (!order_id) return jsonError("Missing order_id", 400);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, serviceRole);
 
-    const { data, error } = await supabase
+    const { data: orderData, error: orderError } = await supabase
       .from("orders")
-      .select(`
-        buyer_name, buyer_email, buyer_phone, total_cents,
-        events(name, slug, starts_at, location_name, location_address),
-        tickets(hash, ticket_types(name))
-      `)
-      .eq("id", order_id)
-      .maybeSingle();
+      .select("buyer_name, buyer_email, buyer_phone, events(name, starts_at, location_name, location_address)")
+      .eq("id", order_id).maybeSingle();
+    if (orderError || !orderData) return jsonError("Order not found", 404);
+    const order = orderData as unknown as OrderRow;
 
-    if (error || !data) return jsonError("Order not found", 404);
-    const o = data as unknown as OrderRow;
-
-    if (!o.tickets || o.tickets.length === 0) {
-      return jsonError("No tickets to send", 400);
-    }
+    const { data: ticketsData } = await supabase
+      .from("tickets")
+      .select("id, hash, holder_name, holder_email, holder_phone, ticket_types(name)")
+      .eq("order_id", order_id);
+    const tickets = (ticketsData ?? []) as unknown as TicketRow[];
+    if (tickets.length === 0) return jsonError("No tickets", 400);
 
     const siteUrl = Deno.env.get("SITE_URL") ?? "https://artsingressos.vercel.app";
-    const eventDate = o.events?.starts_at ? formatDate(o.events.starts_at) : "";
-
-    // Mensagem WhatsApp em texto plano
-    const lines: string[] = [];
-    lines.push(`Ola, ${o.buyer_name}!`);
-    lines.push("");
-    lines.push(`Sua compra para *${o.events?.name ?? "evento"}* foi confirmada.`);
-    lines.push("");
-    if (eventDate) lines.push(`Data: ${eventDate}`);
-    if (o.events?.location_name) lines.push(`Local: ${o.events.location_name}`);
-    lines.push("");
-    lines.push(`*Seus ingressos (${o.tickets.length}):*`);
-    o.tickets.forEach((t, i) => {
-      lines.push(`${i + 1}. ${t.ticket_types?.name ?? "Ingresso"}`);
-      lines.push(`   ${siteUrl}/voucher/${t.hash}`);
-    });
-    lines.push("");
-    lines.push("Apresente o QR Code na entrada. Bom evento!");
-    const text = lines.join("\n");
-
-    const results = { whatsapp: false, email: false, errors: [] as string[] };
-
-    // 1) WhatsApp via Evolution
     const evoUrl = Deno.env.get("EVOLUTION_API_URL");
     const evoKey = Deno.env.get("EVOLUTION_API_KEY");
     const evoInstance = Deno.env.get("EVOLUTION_INSTANCE");
-    if (evoUrl && evoKey && evoInstance && o.buyer_phone) {
-      try {
-        const phoneDigits = o.buyer_phone.replace(/\D/g, "");
-        const phone = phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`;
-        const resp = await fetch(`${evoUrl.replace(/\/$/, "")}/message/sendText/${evoInstance}`, {
-          method: "POST",
-          headers: { apikey: evoKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ number: phone, text }),
-        });
-        if (resp.ok) {
-          results.whatsapp = true;
-          await supabase.from("audit_log").insert({
-            actor_type: "system", entity_type: "order", entity_id: order_id,
-            action: "WHATSAPP_SENT", after_data: { phone, status: resp.status },
-          });
-        } else {
-          const errTxt = (await resp.text()).slice(0, 300);
-          results.errors.push(`whatsapp:${resp.status}`);
-          await supabase.from("audit_log").insert({
-            actor_type: "system", entity_type: "order", entity_id: order_id,
-            action: "WHATSAPP_FAILED", after_data: { phone, status: resp.status, error: errTxt },
-          });
-        }
-      } catch (e) {
-        results.errors.push(`whatsapp:${e instanceof Error ? e.message : "err"}`);
-      }
-    }
-
-    // 2) Email via Resend
     const resendKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM") ?? "Arts Ingressos <onboarding@resend.dev>";
-    if (resendKey && o.buyer_email) {
-      try {
-        const html = buildEmailHtml(o, siteUrl, eventDate);
-        const resp = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: resendFrom,
-            to: [o.buyer_email],
-            subject: `Seu ingresso - ${o.events?.name ?? "Arts Ingressos"}`,
-            html,
-          }),
-        });
-        if (resp.ok) {
-          results.email = true;
-          await supabase.from("audit_log").insert({
-            actor_type: "system", entity_type: "order", entity_id: order_id,
-            action: "EMAIL_SENT", after_data: { email: o.buyer_email, status: resp.status },
-          });
-        } else {
-          const errTxt = (await resp.text()).slice(0, 300);
-          results.errors.push(`email:${resp.status}`);
-          await supabase.from("audit_log").insert({
-            actor_type: "system", entity_type: "order", entity_id: order_id,
-            action: "EMAIL_FAILED", after_data: { email: o.buyer_email, status: resp.status, error: errTxt },
-          });
-        }
-      } catch (e) {
-        results.errors.push(`email:${e instanceof Error ? e.message : "err"}`);
+
+    // Agrupa por contato
+    const buyerPhone = normalizePhone(order.buyer_phone);
+    const buyerEmail = order.buyer_email.toLowerCase();
+    const buyerKey = `${buyerPhone}|${buyerEmail}`;
+
+    const groups: Record<string, Contact> = {};
+    for (const t of tickets) {
+      const hphone = t.holder_phone ? normalizePhone(t.holder_phone) : "";
+      const hemail = (t.holder_email ?? "").toLowerCase();
+      // Se não tem dados próprios OU bate com buyer, agrupa com buyer
+      const isBuyer = !hphone || (hphone === buyerPhone && hemail === buyerEmail);
+      const key = isBuyer ? buyerKey : `${hphone}|${hemail}`;
+      if (!groups[key]) {
+        groups[key] = {
+          name: isBuyer ? order.buyer_name : (t.holder_name ?? order.buyer_name),
+          email: isBuyer ? order.buyer_email : (t.holder_email ?? order.buyer_email),
+          phone: isBuyer ? order.buyer_phone : (t.holder_phone ?? order.buyer_phone),
+          tickets: [],
+        };
       }
+      groups[key].tickets.push({ hash: t.hash, ticket_type_name: t.ticket_types?.name ?? "Ingresso" });
     }
 
-    return new Response(JSON.stringify(results), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const sentSummary: Array<{ contact: string; whatsapp: boolean; email: boolean; error?: string }> = [];
+
+    for (const [, contact] of Object.entries(groups)) {
+      const firstName = contact.name.split(" ")[0] ?? contact.name;
+      const eventName = order.events?.name ?? "Arts Ingressos";
+
+      // Texto
+      const lines: string[] = [];
+      lines.push(`Ola, ${firstName}!`); lines.push("");
+      lines.push(`Sua compra para *${eventName}* foi confirmada.`);
+      lines.push("");
+      lines.push(`*Seus ingressos (${contact.tickets.length}):*`);
+      contact.tickets.forEach((t, i) => {
+        lines.push(`${i + 1}. ${t.ticket_type_name}`);
+        lines.push(`   ${siteUrl}/voucher/${t.hash}`);
+      });
+      lines.push(""); lines.push("Apresente o QR Code na entrada. Bom evento!");
+      const text = lines.join("\n");
+
+      const result: { contact: string; whatsapp: boolean; email: boolean; error?: string } = {
+        contact: contact.email, whatsapp: false, email: false,
+      };
+
+      // WhatsApp
+      if (evoUrl && evoKey && evoInstance && contact.phone) {
+        try {
+          const ph = normalizePhone(contact.phone);
+          const phone = ph.startsWith("55") ? ph : `55${ph}`;
+          const resp = await fetch(`${evoUrl.replace(/\/$/, "")}/message/sendText/${evoInstance}`, {
+            method: "POST", headers: { apikey: evoKey, "Content-Type": "application/json" },
+            body: JSON.stringify({ number: phone, text }),
+          });
+          result.whatsapp = resp.ok;
+          if (!resp.ok) result.error = `wa:${resp.status}`;
+          await supabase.from("audit_log").insert({
+            actor_type: "system", entity_type: "order", entity_id: order_id,
+            action: resp.ok ? "WHATSAPP_SENT" : "WHATSAPP_FAILED",
+            after_data: { phone, contact_name: contact.name, status: resp.status },
+          });
+        } catch (e) {
+          result.error = `wa:${e instanceof Error ? e.message : "err"}`;
+        }
+      }
+
+      // Email
+      if (resendKey && contact.email) {
+        try {
+          const ticketsHtml = contact.tickets.map((t, i) => `<tr><td style="padding:10px 0;border-bottom:1px solid #eee"><strong>${i + 1}. ${t.ticket_type_name}</strong><br><a href="${siteUrl}/voucher/${t.hash}" style="color:#ea580c;text-decoration:none">Abrir voucher (QR Code) &rarr;</a></td></tr>`).join("");
+          const html = `<!doctype html><html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1f2937;background:#f8fafc"><div style="background:white;border-radius:12px;padding:32px"><h1 style="color:#ea580c;margin:0 0 8px 0;font-size:22px">Compra confirmada</h1><p>Ola, <strong>${contact.name}</strong>!</p><p>Sua compra para <strong>${eventName}</strong> foi confirmada.</p><h2 style="font-size:16px;margin-top:24px">Seus ingressos (${contact.tickets.length})</h2><table style="width:100%;border-collapse:collapse">${ticketsHtml}</table></div></body></html>`;
+          const resp = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: resendFrom, to: [contact.email],
+              subject: `Seu ingresso - ${eventName}`, html,
+            }),
+          });
+          result.email = resp.ok;
+          if (!resp.ok && !result.error) result.error = `email:${resp.status}`;
+          await supabase.from("audit_log").insert({
+            actor_type: "system", entity_type: "order", entity_id: order_id,
+            action: resp.ok ? "EMAIL_SENT" : "EMAIL_FAILED",
+            after_data: { email: contact.email, contact_name: contact.name, status: resp.status },
+          });
+        } catch (e) {
+          if (!result.error) result.error = `email:${e instanceof Error ? e.message : "err"}`;
+        }
+      }
+
+      sentSummary.push(result);
+    }
+
+    return new Response(JSON.stringify({ ok: true, groups: sentSummary.length, sent: sentSummary }), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("send-voucher error:", e);

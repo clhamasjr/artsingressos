@@ -122,7 +122,7 @@ export default function Voucher() {
             <p className="font-semibold text-slate-900">{voucher.ticket_type_name}</p>
           </div>
 
-          <Row label="Nome" value={voucher.buyer_name} />
+          <Row label="Titular" value={voucher.buyer_name} />
           <Row label="CPF" value={voucher.buyer_cpf_masked} mono />
 
           <div className="pt-3 border-t border-slate-200 space-y-2">
