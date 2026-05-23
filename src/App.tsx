@@ -14,6 +14,7 @@ import EventEditor from '@/pages/admin/EventEditor';
 import AdminOrders from '@/pages/admin/Orders';
 import AdminCheckin from '@/pages/admin/Checkin';
 import AdminContagem from '@/pages/admin/Contagem';
+import AdminOperators from '@/pages/admin/Operators';
 
 export default function App() {
   return (
@@ -27,10 +28,11 @@ export default function App() {
 
       {/* Admin */}
       <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
-      <Route path="/admin/eventos" element={<AdminLayout><AdminEvents /></AdminLayout>} />
-      <Route path="/admin/eventos/:id" element={<AdminLayout><EventEditor /></AdminLayout>} />
-      <Route path="/admin/pedidos" element={<AdminLayout><AdminOrders /></AdminLayout>} />
+      <Route path="/admin" element={<AdminLayout requireAdmin><AdminDashboard /></AdminLayout>} />
+      <Route path="/admin/eventos" element={<AdminLayout requireAdmin><AdminEvents /></AdminLayout>} />
+      <Route path="/admin/eventos/:id" element={<AdminLayout requireAdmin><EventEditor /></AdminLayout>} />
+      <Route path="/admin/pedidos" element={<AdminLayout requireAdmin><AdminOrders /></AdminLayout>} />
+      <Route path="/admin/operadores" element={<AdminLayout requireAdmin><AdminOperators /></AdminLayout>} />
       <Route path="/admin/checkin" element={<AdminLayout><AdminCheckin /></AdminLayout>} />
       <Route path="/admin/contagem" element={<AdminLayout><AdminContagem /></AdminLayout>} />
 

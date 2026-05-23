@@ -1,14 +1,16 @@
 import { ReactNode } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Receipt, LogOut, ScanLine, Activity } from 'lucide-react';
+import { LayoutDashboard, Calendar, Receipt, LogOut, ScanLine, Activity, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Spinner } from '@/components/ui/Spinner';
 
 interface AdminLayoutProps {
   children: ReactNode;
+  /** Quando true, exige role 'admin'. Operator vê 'Acesso negado'. Default: false (admin OU operator). */
+  requireAdmin?: boolean;
 }
 
-export function AdminLayout({ children }: AdminLayoutProps) {
+export function AdminLayout({ children, requireAdmin = false }: AdminLayoutProps) {
   const { loading, session, isAdmin, isOperator, user, signOut } = useAuth();
   const location = useLocation();
 
@@ -40,12 +42,30 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     );
   }
 
-  const navItems = [
-    { to: '/admin', icon: LayoutDashboard, label: 'Painel', exact: true },
-    { to: '/admin/eventos', icon: Calendar, label: 'Eventos' },
-    { to: '/admin/pedidos', icon: Receipt, label: 'Pedidos' },
-    { to: '/admin/checkin', icon: ScanLine, label: 'Check-in', adminOnly: false },
-    { to: '/admin/contagem', icon: Activity, label: 'Contagem', adminOnly: false },
+  // Rota exige admin mas user é só operator
+  if (requireAdmin && !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="card max-w-md text-center">
+          <h1 className="text-xl font-bold text-slate-900">Acesso restrito</h1>
+          <p className="mt-2 text-slate-600">
+            Esta área é apenas para administradores. Como operador, você pode usar o Check-in e a Contagem.
+          </p>
+          <a href="/admin/checkin" className="mt-4 inline-block btn-primary">
+            Ir para Check-in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  const navItems: Array<{ to: string; icon: typeof LayoutDashboard; label: string; exact?: boolean; adminOnly?: boolean }> = [
+    { to: '/admin', icon: LayoutDashboard, label: 'Painel', exact: true, adminOnly: true },
+    { to: '/admin/eventos', icon: Calendar, label: 'Eventos', adminOnly: true },
+    { to: '/admin/pedidos', icon: Receipt, label: 'Pedidos', adminOnly: true },
+    { to: '/admin/checkin', icon: ScanLine, label: 'Check-in' },
+    { to: '/admin/contagem', icon: Activity, label: 'Contagem' },
+    { to: '/admin/operadores', icon: Users, label: 'Operadores', adminOnly: true },
   ];
 
   const isActive = (to: string, exact = false) =>
